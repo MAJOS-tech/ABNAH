@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const outletData = [
   { name: "NCR • Golf Course", short: "GC", cover: 1.8, risk: 18420, urgent: 5, tone: "critical" },
@@ -28,6 +28,14 @@ export default function Home() {
   const [selectedOutlet, setSelectedOutlet] = useState("All outlets");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("Live planning view • refreshed 08:30 IST");
+  const [connection, setConnection] = useState<"checking" | "preview" | "connected">("checking");
+
+  useEffect(() => {
+    fetch("/api/zoho/status").then((response) => response.json()).then((data) => {
+      setConnection(data.connected ? "connected" : "preview");
+      if (data.connected) setToast("Zoho Analytics connected • live refresh ready");
+    }).catch(() => setConnection("preview"));
+  }, []);
 
   const filteredActions = useMemo(
     () => actions.filter((action) => selectedOutlet === "All outlets" || action.outlet.includes(selectedOutlet.replace("NCR • ", ""))),
@@ -56,7 +64,7 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div className="crumb"><span>ABNAH</span><em>/</em><strong>{activeView}</strong></div>
-          <div className="top-actions"><span className="live-dot">Data synced</span><button className="icon-button" aria-label="Notifications">◌</button><button className="share-button" onClick={() => setToast("Daily control-tower digest scheduled for 08:30 IST.")}>Share brief</button></div>
+          <div className="top-actions"><span className={connection === "connected" ? "live-dot" : "preview-dot"}>{connection === "connected" ? "Zoho live" : connection === "checking" ? "Checking Zoho" : "Planning preview"}</span><button className="icon-button" aria-label="Notifications">◌</button>{connection === "connected" ? <button className="share-button" onClick={() => setToast("Daily control-tower digest scheduled for 08:30 IST.")}>Share brief</button> : <button className="share-button" onClick={() => { window.location.href = "/api/zoho/connect"; }}>Connect Zoho</button>}</div>
         </header>
 
         <section className="hero">
@@ -64,7 +72,7 @@ export default function Home() {
           <div className="hero-controls"><label>Network view<select value={selectedOutlet} onChange={(e) => setSelectedOutlet(e.target.value)}><option>All outlets</option>{outletData.map((outlet) => <option key={outlet.name}>{outlet.name}</option>)}</select></label><button className="primary-button" onClick={() => setToast("Action queue exported for the procurement team.")}>↓ Export action list</button></div>
         </section>
 
-        <div className="status-strip"><span className="signal" />{toast}<button onClick={() => setToast("Live planning view • refreshed just now")}>Refresh</button></div>
+        <div className="status-strip"><span className="signal" />{toast}<button onClick={() => connection === "connected" ? setToast("Zoho Analytics refresh requested.") : (window.location.href = "/api/zoho/connect")}>{connection === "connected" ? "Refresh now" : "Connect Zoho"}</button></div>
 
         <section className="metric-grid" aria-label="Supply chain key performance indicators">
           <article className="metric-card risk-card"><div className="metric-label">Gross margin at risk <button aria-label="More information">i</button></div><strong>₹40,950</strong><p><span className="up">↑ 12.4%</span> vs. last 7 days</p><div className="spark spark-risk"><i /><i /><i /><i /><i /><i /><i /></div></article>
@@ -81,7 +89,7 @@ export default function Home() {
 
         <section className="panel action-panel"><div className="panel-heading"><div><p className="eyebrow">DECIDE &amp; ACT</p><h2>Today’s replenishment queue</h2></div><div className="heading-actions"><span className="priority-pill">2 P1 critical</span><button className="text-button" onClick={() => setToast("All replenishment actions are displayed below.")}>View all →</button></div></div><div className="table-wrap"><table><thead><tr><th>Priority</th><th>Ingredient / supplier</th><th>Outlet</th><th>Stock cover</th><th>GM exposure</th><th>Menu impact</th><th /></tr></thead><tbody>{filteredActions.map((action) => <tr key={action.item}><td><span className={`priority ${action.priority.toLowerCase()}`}>{action.priority}</span></td><td><strong>{action.item}</strong><small>{action.supplier}</small></td><td>{action.outlet}</td><td><b className={action.priority === "P1" ? "danger-text" : ""}>{action.cover}</b></td><td><strong>{action.value}</strong></td><td><span className="impact-copy">{action.impact}</span></td><td><button className="row-action" onClick={() => setToast(`${action.status}: ${action.item} at ${action.outlet}`)}>{action.status} →</button></td></tr>)}</tbody></table></div></section>
 
-        <section className="zia-panel"><div className="zia-orb">✦</div><div className="zia-content"><p className="eyebrow">ZIA SUPPLY INTELLIGENCE</p><h2>Ask the tower anything</h2><div className="ask-row"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. What should I buy today to protect margin?" aria-label="Ask Zia" /><button onClick={() => setToast(query ? "Question sent to the live Zia query layer." : "Type a question for Zia first.")}>Ask Zia <span>→</span></button></div><div className="question-chips">{ziaQuestions.map((question) => <button key={question} onClick={() => ask(question)}>{question}</button>)}</div></div><div className="zia-note"><span>Context</span><strong>Sales · recipes · inventory · POs</strong><p>Connect Zoho Analytics credentials to activate live responses.</p></div></section>
+        <section className="zia-panel"><div className="zia-orb">✦</div><div className="zia-content"><p className="eyebrow">ZIA SUPPLY INTELLIGENCE</p><h2>Ask the tower anything</h2><div className="ask-row"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. What should I buy today to protect margin?" aria-label="Ask Zia" /><button onClick={() => setToast(query ? connection === "connected" ? "Question sent to the live Zia query layer." : "Connect Zoho to run this question on live data." : "Type a question for Zia first.")}>Ask Zia <span>→</span></button></div><div className="question-chips">{ziaQuestions.map((question) => <button key={question} onClick={() => ask(question)}>{question}</button>)}</div></div><div className="zia-note"><span>Data model</span><strong>Replenishment · menu risk · open PO · purchase receipt</strong><p>{connection === "connected" ? "Authenticated Zoho user session active." : "Secure Zoho sign-in activates live responses."}</p></div></section>
       </section>
     </main>
   );
