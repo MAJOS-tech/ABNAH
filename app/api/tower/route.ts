@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Secure server-side handoff for Zoho Analytics.
@@ -6,11 +6,11 @@ import { NextResponse } from "next/server";
  * secret store. Tokens never reach the browser. Until then, the interface
  * deliberately uses its embedded planning preview.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const apiUrl = process.env.ZOHO_ANALYTICS_API_URL;
-  const token = process.env.ZOHO_ANALYTICS_ACCESS_TOKEN;
+  const token = request.cookies.get("abnah_zoho_access")?.value ?? process.env.ZOHO_ANALYTICS_ACCESS_TOKEN;
   if (!apiUrl || !token) {
-    return NextResponse.json({ mode: "preview", message: "Zoho credentials are not configured." });
+    return NextResponse.json({ mode: "preview", message: "Connect Zoho Analytics to load your live tower." });
   }
 
   const response = await fetch(apiUrl, {
@@ -20,5 +20,5 @@ export async function GET() {
   if (!response.ok) {
     return NextResponse.json({ mode: "unavailable", message: "Zoho Analytics could not be reached." }, { status: 502 });
   }
-  return NextResponse.json({ mode: "live", data: await response.json() });
+  return NextResponse.json({ mode: "live", source: "Zoho Analytics", data: await response.json() });
 }
