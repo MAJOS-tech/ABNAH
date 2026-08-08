@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ABNAH Supply Chain Tower",
-  description: "Restaurant supply-chain intelligence for ABNAH cafés.",
+  description: "Executive restaurant supply-chain intelligence for ABNAH cafés."
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
