@@ -7,9 +7,11 @@ export interface Env {
   FRONTEND_URL?: string;
   ZOHO_ACCOUNTS_URL?: string;
   ZOHO_ANALYTICS_BASE_URL?: string;
+  ZOHO_TOKENS: TokenStore;
 }
 
 type ZohoToken = { access_token: string; refresh_token?: string; expires_in?: number };
+type TokenStore = { get(key: string): Promise<string | null>; put(key: string, value: string): Promise<void> };
 
 const SCOPE = "ZohoAnalytics.data.read";
 const ACCESS_COOKIE = "abnah_zoho_access";
@@ -122,6 +124,9 @@ export default {
     if (url.pathname === "/health") return json(request, env, { status: "ok" });
 
     if (url.pathname === "/auth/zoho") {
+      if (await env.ZOHO_TOKENS.get("refresh_token")) {
+        return json(request, env, { message: "The shared Zoho connection is already configured." }, 409);
+      }
       const state = crypto.randomUUID();
       const params = new URLSearchParams({ response_type: "code", client_id: env.ZOHO_CLIENT_ID, redirect_uri: redirectUri(url), scope: SCOPE, access_type: "offline", prompt: "consent", state });
       return responseWithCookies(`${accountsUrl(env)}/oauth/v2/auth?${params}`, [cookie(STATE_COOKIE, state, 600)]);
@@ -134,6 +139,8 @@ export default {
       const tokenResponse = await fetch(`${accountsUrl(env)}/oauth/v2/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri(url), client_id: env.ZOHO_CLIENT_ID, client_secret: env.ZOHO_CLIENT_SECRET }) });
       if (!tokenResponse.ok) return new Response("Zoho token exchange failed", { status: 502 });
       const token = await tokenResponse.json() as ZohoToken;
+      if (!token.refresh_token) return new Response("Zoho did not return an offline refresh token", { status: 502 });
+      await env.ZOHO_TOKENS.put("refresh_token", token.refresh_token);
       const frontend = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN); frontend.searchParams.set("zoho", "connected");
       return responseWithCookies(frontend.toString(), [
         cookie(ACCESS_COOKIE, token.access_token, token.expires_in ?? 3600),
@@ -144,7 +151,9 @@ export default {
 
     if (url.pathname !== "/api/tower") return json(request, env, { message: "Not found" }, 404);
     const cookies = getCookies(request); let token = cookies[ACCESS_COOKIE]; let refreshed: ZohoToken | undefined;
-    if (!token && cookies[REFRESH_COOKIE]) { refreshed = await refreshToken(env, cookies[REFRESH_COOKIE]); token = refreshed.access_token; }
+    const sharedRefresh = await env.ZOHO_TOKENS.get("refresh_token");
+    const refresh = cookies[REFRESH_COOKIE] ?? sharedRefresh;
+    if (!token && refresh) { refreshed = await refreshToken(env, refresh); token = refreshed.access_token; }
     if (!token) return json(request, env, { mode: "unauthenticated", message: "Connect Zoho to retrieve the ABNAH control tower." }, 401);
     try {
       const entries = await Promise.all(Object.entries(QUERIES).map(async ([name, query]) => [name, csvRows(await exportSql(env, token!, query))]));
