@@ -4,8 +4,11 @@ const num = (value) => Number(String(value || 0).replace(/,/g, ""));
 const html = (value) => String(value ?? "").replace(/[&<>\"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
 document.querySelector("#connect").addEventListener("click", () => { window.location.href = `${API}/auth/zoho`; });
+let liveData = {};
+document.querySelectorAll(".tab").forEach(button => button.addEventListener("click", () => { document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab === button)); document.querySelector("#board-view").hidden = button.dataset.view !== "board"; document.querySelector("#explorer-view").hidden = button.dataset.view !== "explorer"; }));
 
 function render(data) {
+  liveData = data;
   const outlets = data.outlets || [];
   const sales = outlets.reduce((sum, row) => sum + num(row.net_sales), 0);
   const gm = outlets.reduce((sum, row) => sum + num(row.gross_margin), 0);
@@ -22,7 +25,12 @@ function render(data) {
   document.querySelector("#actions").innerHTML = (data.actions || []).map(row => `<tr><td><span class="pill ${String(row.risk_color).toLowerCase()}">${html(row.risk_color)}</span></td><td><b>${html(row.item_name)}</b></td><td>${html(row.store)}</td><td>${html(row.subject_type)}</td><td>${rupees(row.exposure)}</td><td>${html(row.impacted_menu_item_count || "—")}</td></tr>`).join("") || "<tr><td colspan='6'>No red or amber items in the current complete snapshot.</td></tr>";
   document.querySelector("#menu").innerHTML = (data.menu || []).slice(0, 6).map(row => `<p class="line"><b>${html(row.menu_item)}</b><span>${rupees(row.gross_margin)} · ${num(row.gross_margin_pct).toFixed(2)}%</span></p>`).join("");
   document.querySelector("#procurement").innerHTML = (data.procurement || []).slice(0, 6).map(row => `<p class="line"><b>${html(row.vendor_name)}</b><span>${html(row.store)} · ${rupees(row.open_liability)}</span></p>`).join("");
+  const fill = (id, values, label) => document.querySelector(id).innerHTML = `<option value="">All ${label}</option>` + [...new Set(values)].sort().map(value => `<option>${html(value)}</option>`).join("");
+  fill("#filter-outlet", outlets.map(row => row.store), "outlets"); fill("#filter-menu", (data.menu || []).map(row => row.menu_item), "menu items"); fill("#filter-vendor", (data.procurement || []).map(row => row.vendor_name), "vendors"); renderExplorer();
 }
+
+function renderExplorer() { const outlet = document.querySelector("#filter-outlet").value, menu = document.querySelector("#filter-menu").value, vendor = document.querySelector("#filter-vendor").value; const list = (target, rows, left, right) => document.querySelector(target).innerHTML = rows.map(row => `<p class="line"><b>${html(left(row))}</b><span>${right(row)}</span></p>`).join("") || "No rows match this filter."; list("#explorer-menu", (liveData.menu || []).filter(row => !menu || row.menu_item === menu), row => row.menu_item, row => `${rupees(row.gross_margin)} · ${num(row.gross_margin_pct).toFixed(2)}%`); list("#explorer-vendors", (liveData.procurement || []).filter(row => (!outlet || row.store === outlet) && (!vendor || row.vendor_name === vendor)), row => row.vendor_name, row => `${row.store} · ${rupees(row.open_liability)}`); list("#explorer-outlets", (liveData.outlets || []).filter(row => !outlet || row.store === outlet), row => row.store, row => `${rupees(row.net_sales)} sales · ${num(row.gross_margin_pct).toFixed(2)}% GM`); }
+document.querySelectorAll("#filter-outlet,#filter-menu,#filter-vendor").forEach(select => select.addEventListener("change", renderExplorer));
 
 async function load() {
   try {
