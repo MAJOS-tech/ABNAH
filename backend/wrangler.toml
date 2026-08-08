@@ -1,7 +1,0 @@
-name = "abnah-zoho-api"
-main = "src/index.ts"
-compatibility_date = "2026-08-08"
-
-# Set the following through the Cloudflare dashboard or `wrangler secret put`:
-# ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_ANALYTICS_ORG_ID,
-# ZOHO_ANALYTICS_WORKSPACE_ID, FRONTEND_ORIGIN
