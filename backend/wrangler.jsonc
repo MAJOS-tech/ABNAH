@@ -10,6 +10,7 @@
   },
   "vars": {
     "FRONTEND_ORIGIN": "https://majos-tech.github.io",
+    "FRONTEND_URL": "https://majos-tech.github.io/ABNAH/",
     "ZOHO_ANALYTICS_ORG_ID": "60026100833",
     "ZOHO_ANALYTICS_WORKSPACE_ID": "333330000004099001",
     "ZOHO_ACCOUNTS_URL": "https://accounts.zoho.in",
