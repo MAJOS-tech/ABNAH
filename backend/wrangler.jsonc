@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "abnah-zoho-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "FRONTEND_ORIGIN": "https://majos-tech.github.io",
+    "ZOHO_ANALYTICS_ORG_ID": "60026100833",
+    "ZOHO_ANALYTICS_WORKSPACE_ID": "333330000004099001",
+    "ZOHO_ACCOUNTS_URL": "https://accounts.zoho.in",
+    "ZOHO_ANALYTICS_BASE_URL": "https://analyticsapi.zoho.com"
+  }
+}
