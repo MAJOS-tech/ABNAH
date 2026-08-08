@@ -8,6 +8,12 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "kv_namespaces": [
+    {
+      "binding": "ZOHO_TOKENS",
+      "id": "15afe9b43ce84086a8dc3c78847b41cc"
+    }
+  ],
   "vars": {
     "FRONTEND_ORIGIN": "https://majos-tech.github.io",
     "FRONTEND_URL": "https://majos-tech.github.io/ABNAH/",
