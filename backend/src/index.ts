@@ -125,7 +125,9 @@ export default {
 
     if (url.pathname === "/auth/zoho") {
       if (await env.ZOHO_TOKENS.get("refresh_token")) {
-        return json(request, env, { message: "The shared Zoho connection is already configured." }, 409);
+        const frontend = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN);
+        frontend.searchParams.set("zoho", "shared");
+        return new Response(null, { status: 302, headers: { Location: frontend.toString() } });
       }
       const state = crypto.randomUUID();
       const params = new URLSearchParams({ response_type: "code", client_id: env.ZOHO_CLIENT_ID, redirect_uri: redirectUri(url), scope: SCOPE, access_type: "offline", prompt: "consent", state });
