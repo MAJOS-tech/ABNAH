@@ -69,7 +69,10 @@ async function zohoFetch(env: Env, token: string, path: string) {
 async function exportSql(env: Env, token: string, sqlQuery: string) {
   const config = encodeURIComponent(JSON.stringify({ sqlQuery, responseFormat: "csv" }));
   const start = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/data?CONFIG=${config}`);
-  if (!start.ok) throw new Error("Zoho export job could not be created");
+  if (!start.ok) {
+    const detail = await start.text();
+    throw new Error(`Zoho export job could not be created (${start.status}): ${detail.slice(0, 500)}`);
+  }
   const job = await start.json() as { data: { jobId: string } };
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const status = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/exportjobs/${job.data.jobId}`);
@@ -148,6 +151,7 @@ export default {
       const headers: HeadersInit = refreshed ? { "Set-Cookie": cookie(ACCESS_COOKIE, refreshed.access_token, refreshed.expires_in ?? 3600) } : {};
       return json(request, env, { mode: "live", generated_at: new Date().toISOString(), data: Object.fromEntries(entries) }, 200, headers);
     } catch (error) {
+      console.error("Zoho tower export failed", error);
       return json(request, env, { mode: "unavailable", message: error instanceof Error ? error.message : "Zoho request failed" }, 502);
     }
   },
