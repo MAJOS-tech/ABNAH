@@ -26,6 +26,12 @@ function cookie(name: string, value: string, maxAge: number) {
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${maxAge}`;
 }
 
+function responseWithCookies(location: string, cookies: string[]) {
+  const headers = new Headers({ Location: location });
+  for (const value of cookies) headers.append("Set-Cookie", value);
+  return new Response(null, { status: 302, headers });
+}
+
 function cors(request: Request, env: Env) {
   const origin = request.headers.get("Origin");
   return {
@@ -114,7 +120,7 @@ export default {
     if (url.pathname === "/auth/zoho") {
       const state = crypto.randomUUID();
       const params = new URLSearchParams({ response_type: "code", client_id: env.ZOHO_CLIENT_ID, redirect_uri: redirectUri(url), scope: SCOPE, access_type: "offline", prompt: "consent", state });
-      return new Response(null, { status: 302, headers: { Location: `${accountsUrl(env)}/oauth/v2/auth?${params}`, "Set-Cookie": cookie(STATE_COOKIE, state, 600) } });
+      return responseWithCookies(`${accountsUrl(env)}/oauth/v2/auth?${params}`, [cookie(STATE_COOKIE, state, 600)]);
     }
 
     if (url.pathname === "/auth/zoho/callback") {
@@ -125,7 +131,11 @@ export default {
       if (!tokenResponse.ok) return new Response("Zoho token exchange failed", { status: 502 });
       const token = await tokenResponse.json() as ZohoToken;
       const frontend = new URL(env.FRONTEND_ORIGIN); frontend.searchParams.set("zoho", "connected");
-      return new Response(null, { status: 302, headers: { Location: frontend.toString(), "Set-Cookie": [cookie(ACCESS_COOKIE, token.access_token, token.expires_in ?? 3600), cookie(REFRESH_COOKIE, token.refresh_token ?? "", 60 * 60 * 24 * 30), cookie(STATE_COOKIE, "", 0)].join(", ") } });
+      return responseWithCookies(frontend.toString(), [
+        cookie(ACCESS_COOKIE, token.access_token, token.expires_in ?? 3600),
+        cookie(REFRESH_COOKIE, token.refresh_token ?? "", 60 * 60 * 24 * 30),
+        cookie(STATE_COOKIE, "", 0),
+      ]);
     }
 
     if (url.pathname !== "/api/tower") return json(request, env, { message: "Not found" }, 404);
