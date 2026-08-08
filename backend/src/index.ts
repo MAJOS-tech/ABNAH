@@ -11,12 +11,18 @@ export interface Env {
 }
 
 type ZohoToken = { access_token: string; refresh_token?: string; expires_in?: number };
-type TokenStore = { get(key: string): Promise<string | null>; put(key: string, value: string): Promise<void> };
+type TokenStore = {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+};
 
 const SCOPE = "ZohoAnalytics.data.read";
 const ACCESS_COOKIE = "abnah_zoho_access";
 const REFRESH_COOKIE = "abnah_zoho_refresh";
 const STATE_COOKIE = "abnah_zoho_state";
+const TOWER_CACHE_KEY = "tower_response_v1";
+
+const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function getCookies(request: Request) {
   return Object.fromEntries((request.headers.get("Cookie") ?? "").split(";").map((part) => {
@@ -70,12 +76,21 @@ async function zohoFetch(env: Env, token: string, path: string) {
 
 async function exportSql(env: Env, token: string, sqlQuery: string) {
   const config = encodeURIComponent(JSON.stringify({ sqlQuery, responseFormat: "csv" }));
-  const start = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/data?CONFIG=${config}`);
-  if (!start.ok) {
+  let job: { data: { jobId: string } } | undefined;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const start = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/data?CONFIG=${config}`);
+    if (start.ok) {
+      job = await start.json() as { data: { jobId: string } };
+      break;
+    }
     const detail = await start.text();
+    if (start.status === 400 && detail.includes("ASYNC_EXPORT_LIMIT_EXCEEDED")) {
+      await delay(1200 * (attempt + 1));
+      continue;
+    }
     throw new Error(`Zoho export job could not be created (${start.status}): ${detail.slice(0, 500)}`);
   }
-  const job = await start.json() as { data: { jobId: string } };
+  if (!job) throw new Error("Zoho export queue is busy. Please retry in a few seconds.");
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const status = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/exportjobs/${job.data.jobId}`);
     if (!status.ok) throw new Error("Zoho export job status could not be read");
@@ -86,7 +101,7 @@ async function exportSql(env: Env, token: string, sqlQuery: string) {
       return download.text();
     }
     if (result.data.jobCode === "1003" || result.data.jobCode === "1005") throw new Error("Zoho export job failed");
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await delay(700);
   }
   throw new Error("Zoho export timed out");
 }
@@ -158,9 +173,18 @@ export default {
     if (!token && refresh) { refreshed = await refreshToken(env, refresh); token = refreshed.access_token; }
     if (!token) return json(request, env, { mode: "unauthenticated", message: "Connect Zoho to retrieve the ABNAH control tower." }, 401);
     try {
-      const entries = await Promise.all(Object.entries(QUERIES).map(async ([name, query]) => [name, csvRows(await exportSql(env, token!, query))]));
+      const cached = await env.ZOHO_TOKENS.get(TOWER_CACHE_KEY);
+      if (cached) return json(request, env, JSON.parse(cached));
+
+      const entries: Array<[string, Record<string, string>[]]> = [];
+      for (const [name, query] of Object.entries(QUERIES)) {
+        entries.push([name, csvRows(await exportSql(env, token, query))]);
+        await delay(250);
+      }
       const headers: HeadersInit = refreshed ? { "Set-Cookie": cookie(ACCESS_COOKIE, refreshed.access_token, refreshed.expires_in ?? 3600) } : {};
-      return json(request, env, { mode: "live", generated_at: new Date().toISOString(), data: Object.fromEntries(entries) }, 200, headers);
+      const payload = { mode: "live", generated_at: new Date().toISOString(), data: Object.fromEntries(entries) };
+      await env.ZOHO_TOKENS.put(TOWER_CACHE_KEY, JSON.stringify(payload), { expirationTtl: 60 });
+      return json(request, env, payload, 200, headers);
     } catch (error) {
       console.error("Zoho tower export failed", error);
       return json(request, env, { mode: "unavailable", message: error instanceof Error ? error.message : "Zoho request failed" }, 502);
