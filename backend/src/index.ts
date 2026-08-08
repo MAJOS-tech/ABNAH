@@ -4,6 +4,7 @@ export interface Env {
   ZOHO_ANALYTICS_ORG_ID: string;
   ZOHO_ANALYTICS_WORKSPACE_ID: string;
   FRONTEND_ORIGIN: string;
+  FRONTEND_URL?: string;
   ZOHO_ACCOUNTS_URL?: string;
   ZOHO_ANALYTICS_BASE_URL?: string;
 }
@@ -130,7 +131,7 @@ export default {
       const tokenResponse = await fetch(`${accountsUrl(env)}/oauth/v2/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri(url), client_id: env.ZOHO_CLIENT_ID, client_secret: env.ZOHO_CLIENT_SECRET }) });
       if (!tokenResponse.ok) return new Response("Zoho token exchange failed", { status: 502 });
       const token = await tokenResponse.json() as ZohoToken;
-      const frontend = new URL(env.FRONTEND_ORIGIN); frontend.searchParams.set("zoho", "connected");
+      const frontend = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN); frontend.searchParams.set("zoho", "connected");
       return responseWithCookies(frontend.toString(), [
         cookie(ACCESS_COOKIE, token.access_token, token.expires_in ?? 3600),
         cookie(REFRESH_COOKIE, token.refresh_token ?? "", 60 * 60 * 24 * 30),
