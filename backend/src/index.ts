@@ -20,7 +20,7 @@ const SCOPE = "ZohoAnalytics.data.read";
 const ACCESS_COOKIE = "abnah_zoho_access";
 const REFRESH_COOKIE = "abnah_zoho_refresh";
 const STATE_COOKIE = "abnah_zoho_state";
-const TOWER_CACHE_KEY = "tower_response_v1";
+const TOWER_CACHE_KEY = "tower_response_v2";
 
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -91,7 +91,7 @@ async function exportSql(env: Env, token: string, sqlQuery: string) {
     throw new Error(`Zoho export job could not be created (${start.status}): ${detail.slice(0, 500)}`);
   }
   if (!job) throw new Error("Zoho export queue is busy. Please retry in a few seconds.");
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     const status = await zohoFetch(env, token, `/restapi/v2/bulk/workspaces/${env.ZOHO_ANALYTICS_WORKSPACE_ID}/exportjobs/${job.data.jobId}`);
     if (!status.ok) throw new Error("Zoho export job status could not be read");
     const result = await status.json() as { data: { jobCode: string } };
@@ -101,7 +101,7 @@ async function exportSql(env: Env, token: string, sqlQuery: string) {
       return download.text();
     }
     if (result.data.jobCode === "1003" || result.data.jobCode === "1005") throw new Error("Zoho export job failed");
-    await delay(700);
+    await delay(800);
   }
   throw new Error("Zoho export timed out");
 }
@@ -130,6 +130,8 @@ const QUERIES = {
   actions: `SELECT "outlet_name" AS "store", "item_name", "subject_type", "risk_color", ROUND(COALESCE("monetary_exposure",0),0) AS "exposure", ROUND(COALESCE("shortage_qty",0),2) AS "shortage_qty", "po_overdue_days", "impacted_menu_item_count" FROM "QT_02_Numerical_Risk_Center" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "subject_type" IN ('INVENTORY','OPEN_PO_TIMING','MENU_IMPACT') AND "risk_color" IN ('Red','Amber') ORDER BY "risk_priority_rank" ASC, COALESCE("monetary_exposure",0) DESC LIMIT 25`,
   variance: `SELECT "outlet_name" AS "store", ROUND(SUM(COALESCE("consumption_leakage_value",0)),0) AS "leakage_value", ROUND(100.0*SUM(COALESCE("actual_consumption_qty",0)-COALESCE("theoretical_consumption_qty",0))/NULLIF(SUM(COALESCE("theoretical_consumption_qty",0)),0),2) AS "variance_pct" FROM "QT_03_Consumption_Variance" GROUP BY "outlet_name" ORDER BY "leakage_value" DESC`,
   procurement: `SELECT "outlet_name" AS "store", "vendor_name", ROUND(SUM(COALESCE("open_po_liability_pre_tax",0)),0) AS "open_liability", MAX("overdue_days") AS "max_overdue_days" FROM "QT_05_Procurement_Control" WHERE "latest_valid_flag"=1 AND "core_complete_flag"=1 AND "po_status" IN ('Open','Partially Received') GROUP BY "outlet_name", "vendor_name" ORDER BY "open_liability" DESC LIMIT 20`,
+  recipe: `SELECT "menu_item_name", "ingredient_name", ROUND("canonical_qty_per_menu_unit",3) AS "qty_per_menu_unit", "canonical_uom" FROM "ZIA_QT_03_Recipe_Canonical" ORDER BY "menu_item_name", "ingredient_name" LIMIT 1500`,
+  vendorTrace: `SELECT "menu_item_name", "ingredient_name", "outlet_name" AS "store", "vendor_name", "po_number", ROUND("vendor_open_po_liability_pre_tax",0) AS "open_liability", ROUND("vendor_overdue_open_po_liability_pre_tax",0) AS "overdue_liability", "overdue_days", "risk_color" FROM "ZIA_QT_04_Menu_Vendor_Dependency" WHERE "latest_valid_flag"=1 ORDER BY "menu_item_name", "ingredient_name", "overdue_days" DESC LIMIT 1500`,
 };
 
 export default {
@@ -178,7 +180,11 @@ export default {
 
       const entries: Array<[string, Record<string, string>[]]> = [];
       for (const [name, query] of Object.entries(QUERIES)) {
-        entries.push([name, csvRows(await exportSql(env, token, query))]);
+        try {
+          entries.push([name, csvRows(await exportSql(env, token, query))]);
+        } catch (error) {
+          throw new Error(`${name}: ${error instanceof Error ? error.message : "Zoho export failed"}`);
+        }
         await delay(250);
       }
       const headers: HeadersInit = refreshed ? { "Set-Cookie": cookie(ACCESS_COOKIE, refreshed.access_token, refreshed.expires_in ?? 3600) } : {};
