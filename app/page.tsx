@@ -2,94 +2,138 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const outletData = [
-  { name: "NCR • Golf Course", short: "GC", cover: 1.8, risk: 18420, urgent: 5, tone: "critical" },
-  { name: "NCR • Cyber Hub", short: "CH", cover: 2.6, risk: 12680, urgent: 3, tone: "watch" },
-  { name: "NCR • Saket", short: "SK", cover: 4.1, risk: 6240, urgent: 1, tone: "healthy" },
-  { name: "NCR • Noida", short: "NO", cover: 5.4, risk: 3910, urgent: 0, tone: "healthy" },
+type Outlet = {
+  name: string;
+  sales: number;
+  grossMargin: number;
+  gmRate: number;
+  leakage: number;
+  driver: string;
+  priority: string;
+};
+
+const outlets: Outlet[] = [
+  { name: "Saket Premium", sales: 692297, grossMargin: 565071, gmRate: 81.62, leakage: 4535, driver: "Milk", priority: "Coffee Beans availability" },
+  { name: "Connaught Place", sales: 626350, grossMargin: 519292, gmRate: 82.91, leakage: 2152, driver: "Coffee Beans", priority: "Coffee Beans and Lid availability" },
+  { name: "Hauz Khas", sales: 626543, grossMargin: 515846, gmRate: 82.33, leakage: 4181, driver: "Coffee Beans", priority: "FreshDairy delivery recovery" },
 ];
 
-const actions = [
-  { priority: "P1", item: "FreshDairy Whole Milk", supplier: "FreshDairy Foods NCR", outlet: "Golf Course", cover: "1.2 days", value: "₹8,940", impact: "Cappuccino · Latte · Cold Coffee", status: "Order now" },
-  { priority: "P1", item: "Mozzarella Cheese", supplier: "DairyBest", outlet: "Cyber Hub", cover: "1.6 days", value: "₹5,720", impact: "Margherita · Cheese Toast", status: "Confirm PO" },
-  { priority: "P2", item: "Arabica Roast Beans", supplier: "Bean Street", outlet: "Golf Course", cover: "2.4 days", value: "₹3,760", impact: "Espresso · Americano", status: "Expedite" },
-  { priority: "P2", item: "Avocado", supplier: "GreenBasket", outlet: "Saket", cover: "2.8 days", value: "₹2,180", impact: "Avocado Toast", status: "Review" },
+const menuLeaders = [
+  ["Mocha - Medium", "INR 34.9K", "81.59%", "162"],
+  ["Latte - Medium", "INR 34.3K", "83.22%", "168"],
+  ["Latte - Regular", "INR 33.8K", "83.51%", "183"],
+  ["Americano - Medium", "INR 33.5K", "87.31%", "186"],
+  ["Cappuccino - Regular", "INR 32.5K", "83.43%", "177"],
+  ["Flat White - Medium", "INR 32.2K", "83.90%", "150"],
 ];
 
-const ziaQuestions = [
-  "Which outlet has the highest gross margin at risk?",
-  "What must FreshDairy deliver this week?",
-  "Show ingredients with fewer than 3 days of cover.",
-  "Which menu items are exposed by milk shortage?",
+const actionQueue = [
+  { level: "P1", item: "Coffee Beans", outlet: "Connaught Place", exposure: "INR 6.8K", signal: "Red inventory shortage", impact: "56 menu-item links", action: "Replenish / transfer" },
+  { level: "P1", item: "Coffee Beans", outlet: "Saket Premium", exposure: "INR 6.3K", signal: "Red inventory shortage", impact: "56 menu-item links", action: "Replenish / transfer" },
+  { level: "P1", item: "Paneer", outlet: "Hauz Khas", exposure: "INR 17.7K", signal: "Open PO timing - 5 days", impact: "4 menu items", action: "Expedite supplier" },
+  { level: "P1", item: "Chicken", outlet: "Hauz Khas", exposure: "INR 12.3K", signal: "Open PO timing - 11 days", impact: "6 menu items", action: "Expedite supplier" },
+  { level: "P2", item: "Cheese", outlet: "Hauz Khas", exposure: "INR 11.1K", signal: "Open PO timing - 8 days", impact: "14 menu items", action: "Confirm PO date" },
+  { level: "P2", item: "Croissant Base", outlet: "Connaught Place", exposure: "INR 11.0K", signal: "Open PO timing - 8 days", impact: "8 menu items", action: "Confirm PO date" },
 ];
+
+const supplierRows = [
+  ["FreshDairy Foods NCR", "Hauz Khas", "INR 15.6K", "28 days"],
+  ["FreshDairy Foods NCR", "Saket Premium", "INR 14.7K", "28 days"],
+  ["FreshDairy Foods NCR", "Connaught Place", "INR 9.2K", "29 days"],
+  ["NorthStar Poultry", "Connaught Place", "INR 8.9K", "7 days"],
+];
+
+const ziaPrompts = [
+  "Which menu items are exposed by Coffee Beans?",
+  "What should FreshDairy deliver this week?",
+  "Show consumption variance by outlet.",
+];
+
+const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
 export default function Home() {
-  const [activeView, setActiveView] = useState("Command center");
-  const [selectedOutlet, setSelectedOutlet] = useState("All outlets");
-  const [query, setQuery] = useState("");
-  const [toast, setToast] = useState("Live planning view • refreshed 08:30 IST");
+  const [selectedOutlet, setSelectedOutlet] = useState("Network");
+  const [activeView, setActiveView] = useState("Executive brief");
+  const [question, setQuestion] = useState("");
+  const [notice, setNotice] = useState("Validated January 2026 operating snapshot - latest complete risk date: 31 Jan 2026");
   const [connection, setConnection] = useState<"checking" | "preview" | "connected">("checking");
 
   useEffect(() => {
-    fetch("/api/zoho/status").then((response) => response.json()).then((data) => {
-      setConnection(data.connected ? "connected" : "preview");
-      if (data.connected) setToast("Zoho Analytics connected • live refresh ready");
-    }).catch(() => setConnection("preview"));
+    fetch("/api/zoho/status")
+      .then((response) => response.json())
+      .then((data) => setConnection(data.connected ? "connected" : "preview"))
+      .catch(() => setConnection("preview"));
   }, []);
 
-  const filteredActions = useMemo(
-    () => actions.filter((action) => selectedOutlet === "All outlets" || action.outlet.includes(selectedOutlet.replace("NCR • ", ""))),
-    [selectedOutlet],
-  );
+  const visibleOutlets = useMemo(() => selectedOutlet === "Network" ? outlets : outlets.filter((outlet) => outlet.name === selectedOutlet), [selectedOutlet]);
+  const totals = useMemo(() => visibleOutlets.reduce((acc, outlet) => ({ sales: acc.sales + outlet.sales, grossMargin: acc.grossMargin + outlet.grossMargin, leakage: acc.leakage + outlet.leakage }), { sales: 0, grossMargin: 0, leakage: 0 }), [visibleOutlets]);
+  const marginRate = totals.sales ? totals.grossMargin / totals.sales * 100 : 0;
+  const maxMargin = Math.max(...visibleOutlets.map((outlet) => outlet.grossMargin));
 
-  function ask(question: string) {
-    setQuery(question);
-    setToast("Zia question prepared — connect your Zoho token to run it live.");
+  function askZia(prompt = question) {
+    if (!prompt.trim()) return setNotice("Choose a suggested question or type one for Zia.");
+    setQuestion(prompt);
+    setNotice(connection === "connected" ? "Zoho session is connected. Configure the approved analytics query mapping to return the live answer." : "Zia question saved. Connect Zoho Analytics to use approved live-query mappings.");
   }
 
   return (
-    <main className="tower-shell">
-      <aside className="rail" aria-label="Main navigation">
-        <div className="brand-mark"><span>AB</span><i /></div>
+    <main className="tower">
+      <aside className="side-nav" aria-label="Tower navigation">
+        <div className="brand"><span>AB</span><div><strong>ABNAH</strong><small>Supply Chain Tower</small></div></div>
         <nav>
-          {["Command center", "Inventory health", "Supplier pulse", "Demand plan", "Margin risk"].map((item, index) => (
-            <button key={item} className={activeView === item ? "nav-item active" : "nav-item"} onClick={() => setActiveView(item)}>
-              <b>{["◈", "▣", "⌁", "↗", "◉"][index]}</b><span>{item}</span>
+          {["Executive brief", "Menu performance", "Action queue", "Supplier control", "Data confidence"].map((item, index) => (
+            <button key={item} className={activeView === item ? "nav-link active" : "nav-link"} onClick={() => { setActiveView(item); setNotice(`${item} is in focus.`); }}>
+              <i>{["01", "02", "03", "04", "05"][index]}</i>{item}
             </button>
           ))}
         </nav>
-        <div className="rail-bottom"><button className="nav-item"><b>⚙</b><span>Settings</span></button><div className="avatar">SP</div></div>
+        <div className="nav-foot"><span>ABG-GIT Workspace</span><strong>ABNAH meeting Demo</strong></div>
       </aside>
 
-      <section className="workspace">
+      <section className="content">
         <header className="topbar">
-          <div className="crumb"><span>ABNAH</span><em>/</em><strong>{activeView}</strong></div>
-          <div className="top-actions"><span className={connection === "connected" ? "live-dot" : "preview-dot"}>{connection === "connected" ? "Zoho live" : connection === "checking" ? "Checking Zoho" : "Planning preview"}</span><button className="icon-button" aria-label="Notifications">◌</button>{connection === "connected" ? <button className="share-button" onClick={() => setToast("Daily control-tower digest scheduled for 08:30 IST.")}>Share brief</button> : <button className="share-button" onClick={() => { window.location.href = "/api/zoho/connect"; }}>Connect Zoho</button>}</div>
+          <div><span className="eyebrow">ABNAH CAFE</span><h2>{activeView}</h2></div>
+          <div className="header-actions">
+            <span className={connection === "connected" ? "connection live" : "connection"}>{connection === "connected" ? "Zoho session connected" : connection === "checking" ? "Checking Zoho" : "Verified snapshot"}</span>
+            <button className="outline-button" onClick={() => connection === "connected" ? setNotice("Live access is connected. Configure approved report queries in the Zoho API mapping to refresh values.") : (window.location.href = "/api/zoho/connect")}>{connection === "connected" ? "Connection status" : "Connect Zoho"}</button>
+          </div>
         </header>
 
-        <section className="hero">
-          <div><p className="eyebrow">SUPPLY CHAIN COMMAND CENTER</p><h1>Protect today’s sales.<br /><span>Plan the next seven days.</span></h1><p className="hero-copy">One view for replenishment, supplier follow-up and menu margin exposure across ABNAH cafés.</p></div>
-          <div className="hero-controls"><label>Network view<select value={selectedOutlet} onChange={(e) => setSelectedOutlet(e.target.value)}><option>All outlets</option>{outletData.map((outlet) => <option key={outlet.name}>{outlet.name}</option>)}</select></label><button className="primary-button" onClick={() => setToast("Action queue exported for the procurement team.")}>↓ Export action list</button></div>
+        <section className="headline">
+          <div><p className="eyebrow">JANUARY 2026 - EXECUTIVE DECISION PACK</p><h1>Margin. Availability.<br /><em>Action.</em></h1><p>Protect the coffee-margin engine, resolve material supplier delays and focus outlet controls where consumption diverges from recipe demand.</p></div>
+          <div className="filter-box"><label htmlFor="outlet">Scope</label><select id="outlet" value={selectedOutlet} onChange={(event) => setSelectedOutlet(event.target.value)}><option>Network</option>{outlets.map((outlet) => <option key={outlet.name}>{outlet.name}</option>)}</select><span>Period: 01-31 Jan 2026</span></div>
         </section>
 
-        <div className="status-strip"><span className="signal" />{toast}<button onClick={() => connection === "connected" ? setToast("Zoho Analytics refresh requested.") : (window.location.href = "/api/zoho/connect")}>{connection === "connected" ? "Refresh now" : "Connect Zoho"}</button></div>
+        <div className="notice"><span />{notice}<button onClick={() => setNotice("Expiry risk is excluded from the executive total because its source is declared provisional synthetic data, not POSIST actual batch expiry.")}>Data note</button></div>
 
-        <section className="metric-grid" aria-label="Supply chain key performance indicators">
-          <article className="metric-card risk-card"><div className="metric-label">Gross margin at risk <button aria-label="More information">i</button></div><strong>₹40,950</strong><p><span className="up">↑ 12.4%</span> vs. last 7 days</p><div className="spark spark-risk"><i /><i /><i /><i /><i /><i /><i /></div></article>
-          <article className="metric-card"><div className="metric-label">Urgent replenishments <button aria-label="More information">i</button></div><strong>9 <small>SKUs</small></strong><p><span className="warning-dot" /> 5 need a PO today</p><div className="meter"><i style={{ width: "72%" }} /></div></article>
-          <article className="metric-card"><div className="metric-label">Open purchase orders <button aria-label="More information">i</button></div><strong>₹2.46L</strong><p><span className="good">63%</span> due within 48 hours</p><div className="mini-bars"><i /><i /><i /><i /><i /><i /></div></article>
-          <article className="metric-card"><div className="metric-label">Network stock cover <button aria-label="More information">i</button></div><strong>3.6 <small>days</small></strong><p><span className="good">+0.4 days</span> vs. target</p><div className="cover-scale"><i /><i /><i /><i /><i /></div></article>
+        <section className="kpis" aria-label="Executive KPIs">
+          <article><span>Net sales</span><strong>INR {(totals.sales / 1_000_000).toFixed(2)}M</strong><small>{selectedOutlet === "Network" ? "3 cafes" : selectedOutlet}</small></article>
+          <article><span>Gross margin</span><strong>INR {(totals.grossMargin / 1_000_000).toFixed(2)}M</strong><small>{marginRate.toFixed(2)}% theoretical GM</small></article>
+          <article><span>Recipe-cost coverage</span><strong>100%</strong><small>All reported sales costed</small></article>
+          <article><span>Modelled variance</span><strong>INR {(totals.leakage / 1000).toFixed(1)}K</strong><small>Thresholds pending approval</small></article>
         </section>
 
-        <section className="board-grid">
-          <article className="panel outlet-panel"><div className="panel-heading"><div><p className="eyebrow">NETWORK HEALTH</p><h2>Outlet stock &amp; margin exposure</h2></div><button className="text-button">Outlet detail →</button></div><div className="outlet-list">{outletData.map((outlet) => <div className="outlet-row" key={outlet.name}><div className={`outlet-badge ${outlet.tone}`}>{outlet.short}</div><div className="outlet-name"><strong>{outlet.name}</strong><span>{outlet.urgent ? `${outlet.urgent} urgent items` : "No urgent items"}</span></div><div className="cover-cell"><span>Stock cover</span><strong>{outlet.cover}d</strong><div className="cover-track"><i style={{ width: `${Math.min(outlet.cover / 6 * 100, 100)}%` }} /></div></div><div className="risk-cell"><span>Margin at risk</span><strong>₹{outlet.risk.toLocaleString("en-IN")}</strong></div></div>)}</div></article>
-
-          <article className="panel supplier-panel"><div className="panel-heading"><div><p className="eyebrow">SUPPLIER PULSE</p><h2>FreshDairy Foods NCR</h2></div><span className="supplier-status">Needs follow-up</span></div><div className="supplier-score"><div className="score-ring"><b>72</b><span>/100</span></div><div><strong>Vendor reliability is slipping</strong><p>2 late receipts in the last 7 days. Milk delivery affects 3 high-margin beverage lines.</p></div></div><div className="supplier-stats"><div><span>Wallet share</span><strong>28%</strong></div><div><span>Open PO value</span><strong>₹34,200</strong></div><div><span>Next expected</span><strong>Today, 14:00</strong></div></div><button className="supplier-action" onClick={() => setToast("Supplier follow-up brief opened for FreshDairy Foods NCR.")}>Open supplier brief <span>→</span></button></article>
+        <section className="two-up">
+          <article className="panel store-panel"><div className="panel-head"><div><span className="eyebrow">STORE PERFORMANCE</span><h3>Gross-margin contribution</h3></div><span className="panel-tag">INR</span></div>
+            <div className="bar-list">{visibleOutlets.map((outlet) => <div className="bar-row" key={outlet.name}><div className="bar-label"><strong>{outlet.name}</strong><span>{outlet.gmRate.toFixed(2)}% GM</span></div><div className="bar-track"><i style={{ width: `${outlet.grossMargin / maxMargin * 100}%` }} /></div><strong className="bar-value">INR {inr.format(outlet.grossMargin / 1000)}K</strong></div>)}</div>
+            <div className="insight"><b>Decision:</b> Saket Premium leads absolute contribution; Connaught Place leads margin efficiency. Keep beverage service levels protected at all outlets.</div>
+          </article>
+          <article className="panel focus-panel"><div className="panel-head"><div><span className="eyebrow">NETWORK RISK</span><h3>What deserves action now</h3></div><span className="risk-dot">P1</span></div>
+            <ol><li><b>Protect Coffee Beans</b><span>Red inventory flags at Connaught Place and Saket; 56 menu-item links each.</span></li><li><b>Recover FreshDairy service</b><span>INR 39.4K open liability across the network; aged lines up to 29 days.</span></li><li><b>Control Hauz Khas usage</b><span>6.60% modelled consumption variance, led by Coffee Beans.</span></li></ol>
+          </article>
         </section>
 
-        <section className="panel action-panel"><div className="panel-heading"><div><p className="eyebrow">DECIDE &amp; ACT</p><h2>Today’s replenishment queue</h2></div><div className="heading-actions"><span className="priority-pill">2 P1 critical</span><button className="text-button" onClick={() => setToast("All replenishment actions are displayed below.")}>View all →</button></div></div><div className="table-wrap"><table><thead><tr><th>Priority</th><th>Ingredient / supplier</th><th>Outlet</th><th>Stock cover</th><th>GM exposure</th><th>Menu impact</th><th /></tr></thead><tbody>{filteredActions.map((action) => <tr key={action.item}><td><span className={`priority ${action.priority.toLowerCase()}`}>{action.priority}</span></td><td><strong>{action.item}</strong><small>{action.supplier}</small></td><td>{action.outlet}</td><td><b className={action.priority === "P1" ? "danger-text" : ""}>{action.cover}</b></td><td><strong>{action.value}</strong></td><td><span className="impact-copy">{action.impact}</span></td><td><button className="row-action" onClick={() => setToast(`${action.status}: ${action.item} at ${action.outlet}`)}>{action.status} →</button></td></tr>)}</tbody></table></div></section>
+        <section className="panel action-panel"><div className="panel-head"><div><span className="eyebrow">DECIDE AND ACT</span><h3>Priority replenishment queue</h3></div><span className="chip">Current complete snapshot</span></div>
+          <div className="scroll"><table><thead><tr><th>Priority</th><th>Ingredient</th><th>Outlet</th><th>Risk signal</th><th>Margin exposure</th><th>Menu impact</th><th>Recommended action</th></tr></thead><tbody>{actionQueue.filter((row) => selectedOutlet === "Network" || row.outlet === selectedOutlet).map((row) => <tr key={`${row.item}-${row.outlet}`}><td><span className={`priority ${row.level.toLowerCase()}`}>{row.level}</span></td><td><strong>{row.item}</strong></td><td>{row.outlet}</td><td>{row.signal}</td><td><strong>{row.exposure}</strong></td><td>{row.impact}</td><td><button className="table-action" onClick={() => setNotice(`${row.action}: ${row.item} at ${row.outlet}. Assign an owner and due time in the daily huddle.`)}>{row.action} <b>→</b></button></td></tr>)}</tbody></table></div>
+        </section>
 
-        <section className="zia-panel"><div className="zia-orb">✦</div><div className="zia-content"><p className="eyebrow">ZIA SUPPLY INTELLIGENCE</p><h2>Ask the tower anything</h2><div className="ask-row"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. What should I buy today to protect margin?" aria-label="Ask Zia" /><button onClick={() => setToast(query ? connection === "connected" ? "Question sent to the live Zia query layer." : "Connect Zoho to run this question on live data." : "Type a question for Zia first.")}>Ask Zia <span>→</span></button></div><div className="question-chips">{ziaQuestions.map((question) => <button key={question} onClick={() => ask(question)}>{question}</button>)}</div></div><div className="zia-note"><span>Data model</span><strong>Replenishment · menu risk · open PO · purchase receipt</strong><p>{connection === "connected" ? "Authenticated Zoho user session active." : "Secure Zoho sign-in activates live responses."}</p></div></section>
+        <section className="three-up">
+          <article className="panel"><span className="eyebrow">MENU PERFORMANCE</span><h3>Protect the coffee core</h3><table className="compact"><thead><tr><th>Menu item</th><th>GM</th><th>Rate</th></tr></thead><tbody>{menuLeaders.slice(0, 4).map(([item, margin, rate]) => <tr key={item}><td>{item}</td><td>{margin}</td><td className="positive">{rate}</td></tr>)}</tbody></table><p className="panel-copy">Americano - Medium has the highest featured GM rate at 87.31%. Do not discount coffee items with critical ingredient risk.</p></article>
+          <article className="panel"><span className="eyebrow">SUPPLIER CONTROL</span><h3>FreshDairy recovery plan</h3><table className="compact"><thead><tr><th>Outlet</th><th>Liability</th><th>Overdue</th></tr></thead><tbody>{supplierRows.slice(0, 3).map(([, outlet, liability, overdue]) => <tr key={outlet}><td>{outlet}</td><td>{liability}</td><td className="danger">{overdue}</td></tr>)}</tbody></table><button className="inline-action" onClick={() => setNotice("FreshDairy action: confirm delivery date by Milk, Cream, Paneer and Cheese; prepare approved alternate-source plan.")}>Open supplier brief →</button></article>
+          <article className="panel confidence"><span className="eyebrow">DATA CONFIDENCE</span><h3>What is ready to use</h3><div className="confidence-row"><span>Recipe costing</span><b>Ready</b></div><div className="confidence-row"><span>Inventory and PO risk</span><b>Review actions</b></div><div className="confidence-row"><span>Expiry risk</span><b className="danger">Not actuals</b></div><p className="panel-copy">Expiry records are provisional synthetic demonstration data. Keep them out of actual loss reporting until POSIST batch-expiry data is integrated.</p></article>
+        </section>
+
+        <section className="zia"><div className="zia-mark">Z</div><div className="zia-main"><span className="eyebrow">ZIA SUPPLY INTELLIGENCE</span><h3>Ask the tower a question</h3><div className="ask"><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What should I buy today to protect margin?" aria-label="Ask Zia" /><button onClick={() => askZia()}>Ask Zia →</button></div><div className="prompts">{ziaPrompts.map((prompt) => <button key={prompt} onClick={() => askZia(prompt)}>{prompt}</button>)}</div></div><div className="zia-side"><span>Query guardrail</span><b>Answers should use approved Zoho views and disclose confidence.</b></div></section>
       </section>
     </main>
   );
