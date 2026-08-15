@@ -8,8 +8,9 @@ This Cloudflare Worker is the secure backend for the ABNAH Supply Chain Tower fr
 - `ZOHO_CLIENT_SECRET` - secret
 - `ZOHO_ANALYTICS_ORG_ID=60026100833`
 - `ZOHO_ANALYTICS_WORKSPACE_ID=333330000004099001`
-- `FRONTEND_ORIGIN=https://abnahsct.majostech.com`
-- `FRONTEND_URL=https://abnahsct.majostech.com/`
+- `FRONTEND_ORIGIN=https://abnahsct.majostech.com` (default origin)
+- `FRONTEND_ORIGINS=https://abnahsct.majostech.com,https://majos-tech.github.io` (approved browser origins)
+- `FRONTEND_URL=https://abnahsct.majostech.com/` (default OAuth return page)
 
 Optional India defaults are in `.dev.vars.example`.
 
@@ -26,3 +27,7 @@ After deploying the Worker, use this redirect URI in the Zoho API Console:
 - `GET /api/tower`
 
 The Worker reads only the approved ABNAH query views: profitability, risk center, consumption variance and procurement control.
+
+## Dual frontend behavior
+
+Both the branded domain and the GitHub Pages project URL may call the API with credentials. OAuth validates the requested return page against `FRONTEND_ORIGINS`; unapproved return addresses fall back to `FRONTEND_URL`. Do not replace the allowlist with a wildcard because credentialed CORS requires an explicit approved origin.
