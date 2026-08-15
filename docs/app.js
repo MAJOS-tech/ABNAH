@@ -3,7 +3,7 @@ const rupees = (value) => new Intl.NumberFormat("en-IN", { style: "currency", cu
 const num = (value) => Number(String(value || 0).replace(/,/g, ""));
 const html = (value) => String(value ?? "").replace(/[&<>\"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
-document.querySelector("#connect").addEventListener("click", () => { window.location.href = `${API}/auth/zoho`; });
+document.querySelector("#connect").addEventListener("click", () => { window.location.href = `${API}/auth/zoho?return_to=${encodeURIComponent(window.location.href)}`; });
 let liveData = {};
 document.querySelectorAll(".tab").forEach(button => button.addEventListener("click", () => { document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab === button)); document.querySelector("#board-view").hidden = button.dataset.view !== "board"; document.querySelector("#explorer-view").hidden = button.dataset.view !== "explorer"; }));
 
