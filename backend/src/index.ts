@@ -4,6 +4,7 @@ export interface Env {
   ZOHO_ANALYTICS_ORG_ID: string;
   ZOHO_ANALYTICS_WORKSPACE_ID: string;
   FRONTEND_ORIGIN: string;
+  FRONTEND_ORIGINS?: string;
   FRONTEND_URL?: string;
   ZOHO_ACCOUNTS_URL?: string;
   ZOHO_ANALYTICS_BASE_URL?: string;
@@ -20,6 +21,7 @@ const SCOPE = "ZohoAnalytics.data.read";
 const ACCESS_COOKIE = "abnah_zoho_access";
 const REFRESH_COOKIE = "abnah_zoho_refresh";
 const STATE_COOKIE = "abnah_zoho_state";
+const RETURN_COOKIE = "abnah_zoho_return";
 const TOWER_CACHE_KEY = "tower_response_v2";
 
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -41,15 +43,35 @@ function responseWithCookies(location: string, cookies: string[]) {
   return new Response(null, { status: 302, headers });
 }
 
+function allowedOrigins(env: Env) {
+  return (env.FRONTEND_ORIGINS ?? env.FRONTEND_ORIGIN)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function approvedFrontend(request: Request, env: Env) {
+  const fallback = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN);
+  const candidate = new URL(request.url).searchParams.get("return_to") ?? request.headers.get("Referer");
+  if (!candidate) return fallback;
+  try {
+    const target = new URL(candidate);
+    return allowedOrigins(env).includes(target.origin) ? target : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function cors(request: Request, env: Env) {
   const origin = request.headers.get("Origin");
-  return {
-    "Access-Control-Allow-Origin": origin === env.FRONTEND_ORIGIN ? origin : env.FRONTEND_ORIGIN,
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     Vary: "Origin",
   };
+  if (origin && allowedOrigins(env).includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
 }
 
 function json(request: Request, env: Env, body: unknown, status = 200, extraHeaders: HeadersInit = {}) {
@@ -141,14 +163,17 @@ export default {
     if (url.pathname === "/health") return json(request, env, { status: "ok" });
 
     if (url.pathname === "/auth/zoho") {
+      const frontend = approvedFrontend(request, env);
       if (await env.ZOHO_TOKENS.get("refresh_token")) {
-        const frontend = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN);
         frontend.searchParams.set("zoho", "shared");
         return new Response(null, { status: 302, headers: { Location: frontend.toString() } });
       }
       const state = crypto.randomUUID();
       const params = new URLSearchParams({ response_type: "code", client_id: env.ZOHO_CLIENT_ID, redirect_uri: redirectUri(url), scope: SCOPE, access_type: "offline", prompt: "consent", state });
-      return responseWithCookies(`${accountsUrl(env)}/oauth/v2/auth?${params}`, [cookie(STATE_COOKIE, state, 600)]);
+      return responseWithCookies(`${accountsUrl(env)}/oauth/v2/auth?${params}`, [
+        cookie(STATE_COOKIE, state, 600),
+        cookie(RETURN_COOKIE, frontend.toString(), 600),
+      ]);
     }
 
     if (url.pathname === "/auth/zoho/callback") {
@@ -160,11 +185,13 @@ export default {
       const token = await tokenResponse.json() as ZohoToken;
       if (!token.refresh_token) return new Response("Zoho did not return an offline refresh token", { status: 502 });
       await env.ZOHO_TOKENS.put("refresh_token", token.refresh_token);
-      const frontend = new URL(env.FRONTEND_URL ?? env.FRONTEND_ORIGIN); frontend.searchParams.set("zoho", "connected");
+      const frontend = approvedFrontend(new Request(`${url.origin}/auth/zoho?return_to=${encodeURIComponent(cookies[RETURN_COOKIE] ?? "")}`), env);
+      frontend.searchParams.set("zoho", "connected");
       return responseWithCookies(frontend.toString(), [
         cookie(ACCESS_COOKIE, token.access_token, token.expires_in ?? 3600),
         cookie(REFRESH_COOKIE, token.refresh_token ?? "", 60 * 60 * 24 * 30),
         cookie(STATE_COOKIE, "", 0),
+        cookie(RETURN_COOKIE, "", 0),
       ]);
     }
 
