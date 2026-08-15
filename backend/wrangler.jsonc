@@ -16,6 +16,7 @@
   ],
   "vars": {
     "FRONTEND_ORIGIN": "https://abnahsct.majostech.com",
+    "FRONTEND_ORIGINS": "https://abnahsct.majostech.com,https://majos-tech.github.io",
     "FRONTEND_URL": "https://abnahsct.majostech.com/",
     "ZOHO_ANALYTICS_ORG_ID": "60026100833",
     "ZOHO_ANALYTICS_WORKSPACE_ID": "333330000004099001",
