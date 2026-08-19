@@ -16,3 +16,10 @@
 - Added validated OAuth return routing so users return to whichever approved frontend initiated login.
 - GitHub Pages deployment completed successfully (run 31865200218).
 - Worker deployment and live authenticated-data validation remain required after this configuration change.
+
+## 2026-08-19
+
+- Added a branch-scoped trusted `GET /internal/replenishment-risks` interface for the MAJOSTech reusable WhatsApp-agent connector.
+- The endpoint is read-only, token-authenticated, and returns only an allow-listed risk schema from the existing `actions` query.
+- The existing browser `/api/tower` route remains unchanged.
+- Before deployment, set the same `MAJOSTECH_SERVICE_TOKEN` as a Cloudflare secret in this Worker and the WhatsApp-agent Worker, then validate the live Zoho connection and service-to-service request.
