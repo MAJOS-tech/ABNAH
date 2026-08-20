@@ -9,6 +9,8 @@ export interface Env {
   ZOHO_ACCOUNTS_URL?: string;
   ZOHO_ANALYTICS_BASE_URL?: string;
   ZOHO_TOKENS: TokenStore;
+  /** Shared secret used only by trusted MAJOSTech service callers. */
+  MAJOSTECH_SERVICE_TOKEN?: string;
 }
 
 type ZohoToken = { access_token: string; refresh_token?: string; expires_in?: number };
@@ -81,6 +83,25 @@ function json(request: Request, env: Env, body: unknown, status = 200, extraHead
 function accountsUrl(env: Env) { return env.ZOHO_ACCOUNTS_URL ?? "https://accounts.zoho.in"; }
 function analyticsUrl(env: Env) { return env.ZOHO_ANALYTICS_BASE_URL ?? "https://analyticsapi.zoho.com"; }
 function redirectUri(url: URL) { return `${url.origin}/auth/zoho/callback`; }
+
+function serviceJson(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function serviceAuthorised(request: Request, env: Env) {
+  const expected = env.MAJOSTECH_SERVICE_TOKEN;
+  const received = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  if (!expected || !received || expected.length !== received.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < expected.length; index += 1) mismatch |= expected.charCodeAt(index) ^ received.charCodeAt(index);
+  return mismatch === 0;
+}
+
+async function sharedAccessToken(env: Env) {
+  const refresh = await env.ZOHO_TOKENS.get("refresh_token");
+  if (!refresh) throw new Error("Zoho shared connection is not ready");
+  return (await refreshToken(env, refresh)).access_token;
+}
 
 async function refreshToken(env: Env, refresh: string): Promise<ZohoToken> {
   const response = await fetch(`${accountsUrl(env)}/oauth/v2/token`, {
@@ -156,11 +177,58 @@ const QUERIES = {
   vendorTrace: `SELECT "menu_item_name", "ingredient_name", "outlet_name" AS "store", "vendor_name", "po_number", ROUND("vendor_open_po_liability_pre_tax",0) AS "open_liability", ROUND("vendor_overdue_open_po_liability_pre_tax",0) AS "overdue_liability", "overdue_days", "risk_color" FROM "ZIA_QT_04_Menu_Vendor_Dependency" WHERE "latest_valid_flag"=1 ORDER BY "menu_item_name", "ingredient_name", "overdue_days" DESC LIMIT 1500`,
 };
 
+type ReplenishmentRisk = {
+  outlet: string;
+  ingredient: string;
+  subjectType: string;
+  severity: string;
+  exposure: string;
+  shortageQuantity: string;
+  overdueDays: string;
+  impactedMenuItemCount: string;
+};
+
+function normaliseRisk(row: Record<string, string>): ReplenishmentRisk {
+  return {
+    outlet: row.store,
+    ingredient: row.item_name,
+    subjectType: row.subject_type,
+    severity: row.risk_color,
+    exposure: row.exposure,
+    shortageQuantity: row.shortage_qty,
+    overdueDays: row.po_overdue_days,
+    impactedMenuItemCount: row.impacted_menu_item_count,
+  };
+}
+
+async function replenishmentRisks(request: Request, env: Env) {
+  const url = new URL(request.url);
+  const outlet = url.searchParams.get("outlet")?.trim().toLowerCase();
+  const ingredient = url.searchParams.get("ingredient")?.trim().toLowerCase();
+  const token = await sharedAccessToken(env);
+  const rows = csvRows(await exportSql(env, token, QUERIES.actions));
+  const risks = rows
+    .map(normaliseRisk)
+    .filter((risk) => (!outlet || risk.outlet.toLowerCase().includes(outlet)) && (!ingredient || risk.ingredient.toLowerCase().includes(ingredient)));
+  return serviceJson({ generatedAt: new Date().toISOString(), risks });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: cors(request, env) });
     if (url.pathname === "/health") return json(request, env, { status: "ok" });
+
+    if (url.pathname === "/internal/replenishment-risks") {
+      if (request.method !== "GET") return serviceJson({ message: "Method not allowed" }, 405);
+      if (!serviceAuthorised(request, env)) return serviceJson({ message: "Unauthorised" }, 401);
+      try {
+        return await replenishmentRisks(request, env);
+      } catch (error) {
+        console.error("Trusted replenishment-risk export failed", error);
+        return serviceJson({ message: "Replenishment risks are temporarily unavailable" }, 502);
+      }
+    }
 
     if (url.pathname === "/auth/zoho") {
       const frontend = approvedFrontend(request, env);
