@@ -213,6 +213,20 @@ async function replenishmentRisks(request: Request, env: Env) {
   return serviceJson({ generatedAt: new Date().toISOString(), risks });
 }
 
+async function whatsappAnalytics(request: Request, env: Env) {
+  const capability = new URL(request.url).searchParams.get("capability");
+  const token = await sharedAccessToken(env);
+  if (capability === "gross_margin" || capability === "top_selling_menu_items") {
+    const rows = csvRows(await exportSql(env, token, QUERIES.menu)).slice(0, 5);
+    return serviceJson({ capability, items: rows.map((row) => ({ outlet: row.store, menuItem: row.menu_item, netSales: row.net_sales, grossMargin: row.gross_margin, grossMarginPct: row.gross_margin_pct, quantitySold: row.qty_sold })) });
+  }
+  if (capability === "vendor_wallet_share") {
+    const rows = csvRows(await exportSql(env, token, QUERIES.procurement)).slice(0, 5);
+    return serviceJson({ capability, vendors: rows.map((row) => ({ outlet: row.store, vendor: row.vendor_name, openLiability: row.open_liability, overdueDays: row.max_overdue_days })) });
+  }
+  return serviceJson({ message: "Unsupported WhatsApp analytics capability" }, 400);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -228,6 +242,13 @@ export default {
         console.error("Trusted replenishment-risk export failed", error);
         return serviceJson({ message: "Replenishment risks are temporarily unavailable" }, 502);
       }
+    }
+
+    if (url.pathname === "/internal/whatsapp-analytics") {
+      if (request.method !== "GET") return serviceJson({ message: "Method not allowed" }, 405);
+      if (!serviceAuthorised(request, env)) return serviceJson({ message: "Unauthorised" }, 401);
+      try { return await whatsappAnalytics(request, env); }
+      catch (error) { console.error("Trusted WhatsApp analytics export failed", error); return serviceJson({ message: "Analytics are temporarily unavailable" }, 502); }
     }
 
     if (url.pathname === "/auth/zoho") {
